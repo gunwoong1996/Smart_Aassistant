@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>나만의 성장 다마고치 RPG</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="title">나만의 성장 다마고치 (로컬)</div>
+      <div class="sub">
+        LV {{p.level}} · EXP {{p.exp}} / {{need}} · 스트릭 {{p.streak}}일
+      </div>
+      <div class="classline">
+        클래스: <b>{{base_class}}</b>
+        {% if trait %} <span class="muted">( {{trait}} 특성 )</span>{% endif %}
+        {% if title %} <span class="badge">{{title}}</span>{% endif %}
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>오늘 무엇을 이뤘는가?</h2>
+      <form action="/log" method="post" class="form">
+        <label><input type="checkbox" name="actions" value="strength"> 근력운동 (힘 +5)</label>
+        <label><input type="checkbox" name="actions" value="stamina"> 유산소 (체력 +5)</label>
+        <label><input type="checkbox" name="actions" value="intelligence"> 공부/독서 (지능 +3)</label>
+        <label><input type="checkbox" name="actions" value="wealth"> 적금/투자 성공 (재력 +7)</label>
+        <label><input type="checkbox" name="actions" value="discipline"> 금주/식단 성공 (자제력 +4)</label>
+
+        <input class="note" name="note" placeholder="메모(선택) 예: 도림천 10km, 스쿼트 3세트"/>
+        <button class="btn" type="submit">기록하기</button>
+      </form>
+      <p class="hint">* 첫 입력 시: 꾸준함 +2, 스트릭 +1, 스트릭 보너스 EXP 적용</p>
+      <p class="hint">* 7일 동안 해당 행동이 없으면 해당 스탯 -2 (약한 감쇠)</p>
+    </section>
+
+    <section class="card">
+      <h2>스탯</h2>
+      <div class="grid">
+        <div class="stat">💪 힘 <b>{{p.strength}}</b> {% if flags.strength_50 %}<span class="tag">어깨확장</span>{% elif flags.strength_20 %}<span class="tag">근육팔</span>{% endif %}</div>
+        <div class="stat">🫁 체력 <b>{{p.stamina}}</b> {% if flags.stamina_50 %}<span class="tag">스피드라인</span>{% elif flags.stamina_20 %}<span class="tag">생기</span>{% endif %}</div>
+        <div class="stat">🧠 지능 <b>{{p.intelligence}}</b> {% if flags.intelligence_50 %}<span class="tag">책+전구</span>{% elif flags.intelligence_20 %}<span class="tag">안경</span>{% endif %}</div>
+        <div class="stat">💰 재력 <b>{{p.wealth}}</b> {% if flags.wealth_50 %}<span class="tag">코트</span>{% elif flags.wealth_20 %}<span class="tag">시계</span>{% endif %}</div>
+        <div class="stat">🧘 자제력 <b>{{p.discipline}}</b> {% if flags.discipline_50 %}<span class="tag">차분표정</span>{% elif flags.discipline_20 %}<span class="tag">피부톤</span>{% endif %}</div>
+        <div class="stat">❤️ 꾸준함 <b>{{p.consistency}}</b> {% if flags.consistency_50 %}<span class="tag">후광</span>{% elif flags.consistency_20 %}<span class="tag">오라</span>{% endif %}</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>스탯 랭킹</h2>
+      <ol>
+        {% for k,v in sorted_stats %}
+          <li>{{k}}: <b>{{v}}</b></li>
+        {% endfor %}
+      </ol>
+      <p class="muted">※ 멀티 특성: 2위 스탯이 1위의 70% 이상이면 활성</p>
+      <p class="muted">※ 맑은눈(확장형): 상위 3개 스탯 차이가 10 이내</p>
+    </section>
+
+    <section class="card">
+      <h2>최근 기록</h2>
+      {% if recent_actions and recent_actions|length > 0 %}
+        <ul class="loglist">
+          {% for a in recent_actions %}
+            <li class="logitem">
+              <div class="logtop">
+                <div>
+                  <b>{{a.date}}</b>
+                  <span class="pill">{{a.type_ko}}</span>
+                </div>
+
+                <!-- 삭제 버튼 -->
+                {% if a.id is defined %}
+                  <form action="/delete" method="post" class="deleteform" onsubmit="return confirm('이 기록을 삭제할까?');">
+                    <input type="hidden" name="action_id" value="{{a.id}}">
+                    <button type="submit" class="delbtn">삭제</button>
+                  </form>
+                {% endif %}
+              </div>
+
+              {% if a.note %}
+                <div class="lognote">{{a.note}}</div>
+              {% else %}
+                <div class="lognote muted">메모 없음</div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+
+        <p class="muted" style="margin-top:10px;">
+          * 삭제는 “기록”만 지우는 동작이야. (스탯/EXP 롤백까지 하려면 app.py에서 재계산 로직을 넣어야 함)
+        </p>
+      {% else %}
+        <div class="muted">아직 기록이 없어.</div>
+      {% endif %}
+    </section>
+
+  </div>
+</body>
+</html>
