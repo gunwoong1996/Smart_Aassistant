@@ -165,8 +165,124 @@ def delete_action():
     conn.execute("DELETE FROM actions WHERE id=?", (int(action_id),))
     conn.commit()
     conn.close()
+
+    # ✅ 삭제 후 profile 재계산
+    new_p = recompute_profile_from_actions()
+    save_profile_dict(new_p)
+
     return redirect(url_for("index"))
 
+
+
+# ====== 재계산 함수 ============
+def get_all_actions():
+    conn = db()
+    rows = conn.execute("""
+        SELECT date, type
+        FROM actions
+        ORDER BY date ASC, id ASC
+    """).fetchall()
+    conn.close()
+    return [(r["date"], r["type"]) for r in rows]
+
+
+def recompute_profile_from_actions():
+    """
+    actions 테이블을 '진실의 원천'으로 삼아 profile을 통째로 재계산한다.
+    규칙:
+    - 행동 1개당: 해당 스탯 +GAIN[type], EXP +10
+    - 하루에 기록이 1개 이상이면: consistency +2, streak +1, streak 보너스 EXP
+    - 약한 감쇠: 현재 날짜 기준 최근 7일 동안 해당 행동이 없으면 해당 스탯 -2
+    - 레벨업: while exp >= need(level)
+    """
+    actions = get_all_actions()
+    today = today_str()
+
+    # 초기화
+    p = {
+        "level": 1,
+        "exp": 0,
+        "strength": 0,
+        "stamina": 0,
+        "intelligence": 0,
+        "wealth": 0,
+        "discipline": 0,
+        "consistency": 0,
+        "streak": 0,
+        "last_check_date": today,
+    }
+
+    if not actions:
+        return p
+
+    # 날짜별로 묶기
+    by_date = {}
+    for d, t in actions:
+        by_date.setdefault(d, []).append(t)
+
+    # actions에 등장한 첫 날짜부터 today까지 하루씩 진행(공백일 포함 → streak 정확)
+    start = parse_date(min(by_date.keys()))
+    end = parse_date(today)
+
+    d = start
+    while d <= end:
+        d_str = d.isoformat()
+        types_today = by_date.get(d_str, [])
+
+        # 그날 기록 처리(행동 스탯/EXP)
+        for t in types_today:
+            if t in GAIN:
+                p[t] += GAIN[t]
+                p["exp"] += EXP_PER_ACTION
+
+        # streak/consistency는 "하루에 1개 이상 기록" 기준
+        if len(types_today) > 0:
+            p["consistency"] += CONSISTENCY_PER_DAY
+            p["streak"] += 1
+            p["exp"] += streak_bonus_exp(p["streak"])
+        else:
+            p["streak"] = 0
+
+        # 레벨업 처리(매일 처리해도 되고, 마지막에 몰아도 되는데 일관성 위해 여기서 처리)
+        while p["exp"] >= need_exp_for_next(p["level"]):
+            p["exp"] -= need_exp_for_next(p["level"])
+            p["level"] += 1
+
+        d += timedelta(days=1)
+
+    # 감쇠(현재 날짜 기준, 최근 7일 동안 행동 없으면 -2)
+    # last action date를 actions에서 계산
+    last_date_for = {t: None for t in ACTION_TYPES}
+    for d_str, t in actions:
+        if t in last_date_for:
+            last_date_for[t] = d_str
+
+    cur_d = parse_date(today)
+    for t in ACTION_TYPES:
+        last_d_str = last_date_for.get(t)
+        if not last_d_str:
+            continue
+        last_d = parse_date(last_d_str)
+        if (cur_d - last_d).days >= 7:
+            p[t] = max(0, p[t] - 2)
+
+    return p
+
+
+def save_profile_dict(p: dict):
+    # profile row를 통째로 업데이트
+    conn = db()
+    conn.execute("""
+        UPDATE profile
+        SET level=?, exp=?, strength=?, stamina=?, intelligence=?, wealth=?, discipline=?, consistency=?, streak=?, last_check_date=?
+        WHERE id=1
+    """, (
+        p["level"], p["exp"],
+        p["strength"], p["stamina"], p["intelligence"], p["wealth"], p["discipline"], p["consistency"],
+        p["streak"], p["last_check_date"],
+    ))
+    conn.commit()
+    conn.close()
 
 def last_action_date_for_type(t: str) -> str | None:
     conn = db()
@@ -303,7 +419,6 @@ def index():
 @app.route("/log", methods=["POST"])
 def log_today():
     init_db()
-    p = get_profile()
 
     d = today_str()
     selected = request.form.getlist("actions")
@@ -312,41 +427,20 @@ def log_today():
     if not selected:
         return redirect(url_for("index"))
 
-    # 기록 저장
-    add_actions(d, selected, note)
-
-    # 스탯/EXP 반영
-    for t in selected:
-        p[t] += GAIN[t]
-        p["exp"] += EXP_PER_ACTION
-
-    # 오늘 뭐든 했으면 꾸준함 +2 (하루 1회만)
-    # 이미 오늘 기록이 있었는지 확인: 방금 넣었으니 "이전" 상태를 모르므로 summary로 막자
-    # 간단히: 오늘 첫 입력일 때만 +2 주기
-    # -> today 이전에 존재하는 기록 여부를 다시 체크(방금 insert 전이라고 가정하면 어렵지만 지금은 after이므로 count로 처리)
+    # 기록 저장 (스탯 계산은 여기서 하지 않음)
     conn = db()
-    cnt = conn.execute("SELECT COUNT(*) AS c FROM actions WHERE date=?", (d,)).fetchone()["c"]
+    for t in selected:
+        conn.execute(
+            "INSERT INTO actions (date, type, amount, note) VALUES (?, ?, 1, ?)",
+            (d, t, note if note else None)
+        )
+    conn.commit()
     conn.close()
 
-    # cnt == len(selected)면 이번이 첫 입력 (이전에 없었음)
-    if cnt == len(selected):
-        p["consistency"] += CONSISTENCY_PER_DAY
-        # streak는 index에서 날짜 넘어갈 때만 갱신하지만,
-        # UX상 오늘 바로 streak 보이게 "오늘 입력했음"을 반영
-        # (어제까지 streak가 X였다면 오늘 +1이 보여야 함)
-        # 단, 이미 오늘 입력한 적이 있으면 또 올리면 안 됨 -> 첫 입력에서만 처리
-        p["streak"] += 1
+    # ✅ 여기서 profile 전체 재계산
+    new_p = recompute_profile_from_actions()
+    save_profile_dict(new_p)
 
-    # streak 보너스 EXP (첫 입력에서만)
-    if cnt == len(selected):
-        p["exp"] += streak_bonus_exp(p["streak"])
-
-    # 레벨업 처리
-    while p["exp"] >= need_exp_for_next(p["level"]):
-        p["exp"] -= need_exp_for_next(p["level"])
-        p["level"] += 1
-
-    update_profile(p)
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
