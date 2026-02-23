@@ -23,6 +23,9 @@
     <section class="card">
       <h2>오늘 무엇을 이뤘는가?</h2>
       <form action="/log" method="post" class="form">
+
+        <input class="note" type="date" name="date" value="{{today}}"> 
+
         <label><input type="checkbox" name="actions" value="strength"> 근력운동 (힘 +5)</label>
         <label><input type="checkbox" name="actions" value="stamina"> 유산소 (체력 +5)</label>
         <label><input type="checkbox" name="actions" value="intelligence"> 공부/독서 (지능 +3)</label>

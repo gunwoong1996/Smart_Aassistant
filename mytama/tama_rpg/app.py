@@ -457,22 +457,33 @@ def index():
     recent_actions = get_recent_actions(30)
 
     return render_template(
-        "index.html",
-        p=p,
-        need=need_exp_for_next(p["level"]),
-        base_class=base_class,
-        trait=trait,
-        title=title,
-        sorted_stats=sorted_stats,
-        flags=flags,
-        recent_actions=recent_actions
+    "index.html",
+    p=p,
+    need=need_exp_for_next(p["level"]),
+    base_class=base_class,
+    trait=trait,
+    title=title,
+    sorted_stats=sorted_stats,
+    flags=flags,
+    recent_actions=recent_actions,
+    today=today_str()
     )
 
 @app.route("/log", methods=["POST"])
 def log_today():
     init_db()
 
-    d = today_str()
+    d = request.form.get("date", "").strip()
+    if not d:
+        d = today_str()
+
+    try:
+        _ = parse_date(d)
+    except Exception:
+        d = today_str()
+
+
+
     selected = request.form.getlist("actions")
     note = request.form.get("note", "").strip()
 
