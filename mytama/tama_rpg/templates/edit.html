@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>기록 수정</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="title">기록 수정</div>
+      <div class="sub muted">행동/날짜/메모를 바꾸면 스탯이 자동 재계산돼.</div>
+    </header>
+
+    <section class="card">
+      <form action="/update" method="post" class="form">
+        <input type="hidden" name="action_id" value="{{action.id}}"/>
+
+        <label>
+          날짜
+          <input class="note" type="date" name="date" value="{{action.date}}"/>
+        </label>
+
+        <label>
+          행동
+          <select class="note" name="type">
+            {% for t in action_types %}
+              <option value="{{t}}" {% if t == action.type %}selected{% endif %}>
+                {{type_ko[t]}}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          메모
+          <input class="note" name="note" value="{{action.note or ''}}" placeholder="메모(선택)"/>
+        </label>
+
+        <button class="btn" type="submit">저장</button>
+        <a class="btn" href="/" style="text-align:center; text-decoration:none; display:block;">취소</a>
+      </form>
+    </section>
+  </div>
+</body>
+</html>

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for
+from flask import abort
 
 APP_DIR = Path(__file__).parent
 DB_PATH = APP_DIR / "tama.db"
@@ -171,6 +172,57 @@ def delete_action():
     save_profile_dict(new_p)
 
     return redirect(url_for("index"))
+
+@app.route("/edit/<int:action_id>", methods=["GET"])
+def edit_action(action_id: int):
+    init_db()
+    conn = db()
+    row = conn.execute("SELECT id, date, type, note FROM actions WHERE id=?", (action_id,)).fetchone()
+    conn.close()
+    if not row:
+        abort(404)
+
+    action = dict(row)
+    return render_template(
+        "edit.html",
+        action=action,
+        type_ko=TYPE_KO,
+        action_types=list(TYPE_KO.keys())
+    )
+
+
+@app.route("/update", methods=["POST"])
+def update_action():
+    init_db()
+    action_id = request.form.get("action_id", "").strip()
+    new_date = request.form.get("date", "").strip()
+    new_type = request.form.get("type", "").strip()
+    new_note = request.form.get("note", "").strip()
+
+    if not action_id.isdigit():
+        return redirect(url_for("index"))
+    if new_type not in TYPE_KO:
+        return redirect(url_for("index"))
+    # date는 YYYY-MM-DD 형식만 허용(간단 검증)
+    try:
+        _ = parse_date(new_date)
+    except Exception:
+        return redirect(url_for("index"))
+
+    conn = db()
+    conn.execute(
+        "UPDATE actions SET date=?, type=?, note=? WHERE id=?",
+        (new_date, new_type, new_note if new_note else None, int(action_id))
+    )
+    conn.commit()
+    conn.close()
+
+    # ✅ 수정 후 profile 재계산
+    new_p = recompute_profile_from_actions()
+    save_profile_dict(new_p)
+
+    return redirect(url_for("index"))
+
 
 
 
